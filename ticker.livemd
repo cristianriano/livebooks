@@ -1,0 +1,49 @@
+# Timers
+
+## Setup
+
+```elixir
+defmodule Ticker do
+  use GenServer
+
+  require Logger
+
+  defstruct interval_seconds: 2,
+            count: 0,
+            timer_ref: nil
+
+  def start_link(_) do
+    state = %__MODULE__{} |> Map.from_struct()
+    GenServer.start_link(__MODULE__, state, id: __MODULE__)
+  end
+
+  def init(%{interval_seconds: interval} = state) do
+    Process.register(self(), :ticker)
+    {:ok, %{state | timer_ref: Process.send_after(self(), :tick, interval * 1000)}}
+  end
+
+  def handle_info(:tick, %{interval_seconds: interval} = state) do
+    Logger.info("Tick #{state.count}")
+    ref = Process.send_after(self(), :tick, interval * 1000)
+
+    {
+      :noreply,
+      %{update_in(state, [:count], &(&1 + 1)) | timer_ref: ref}
+    }
+  end
+
+  def handle_info(:cancel, state) do
+    Logger.info("Cancelled! At #{state.count}")
+    Process.cancel_timer(state.timer_ref)
+    {:noreply, %{state | timer_ref: nil}}
+  end
+end
+
+case Process.whereis(:ticker) do
+  pid when is_pid(pid) -> Process.exit(pid, :kill)
+  _ -> :not_found
+end
+
+{:ok, pid} = Ticker.start_link([])
+Process.send_after(pid, :cancel, 5_000)
+```

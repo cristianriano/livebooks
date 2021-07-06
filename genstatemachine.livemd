@@ -1,0 +1,79 @@
+# GenStateMachine
+
+## Setup
+
+```elixir
+Mix.install([
+  {:gen_state_machine, "~> 3.0"}
+])
+```
+
+## Timeout
+
+```elixir
+defmodule Ticker do
+  use GenStateMachine, restart: :temporary
+
+  require Logger
+
+  def start_link(_) do
+    GenStateMachine.start_link(__MODULE__, {:initial, %{count: 0}}, id: Ticker)
+  end
+
+  def init({state, data}) do
+    Logger.info("Init")
+    {:ok, state, data, [{:next_event, :internal, :start}]}
+  end
+
+  def handle_event(:internal, :start, :initial, data) do
+    Logger.info("Start")
+
+    {
+      :next_state,
+      :started,
+      data,
+      [
+        {:state_timeout, 2_000, :stop},
+        {:timeout, 1_000, :tick}
+      ]
+    }
+  end
+
+  def handle_event(:timeout, :tick, :started, data) do
+    Logger.info("Now ticking")
+
+    {
+      :next_state,
+      :ticking,
+      increment(data),
+      [
+        {:state_timeout, 5_000, :stop},
+        {:timeout, 1_000, :tick}
+      ]
+    }
+  end
+
+  def handle_event(:timeout, :tick, :ticking, data) do
+    Logger.info("Tick #{data.count}")
+
+    {
+      :keep_state,
+      increment(data),
+      [{:timeout, 1_000, :tick}]
+    }
+  end
+
+  def handle_event(:state_timeout, :stop, _state, _data) do
+    Logger.info("Stop")
+    Process.exit(self(), :normal)
+  end
+
+  defp increment(data) do
+    update_in(data, [:count], &(&1 + 1))
+  end
+end
+
+{:ok, pid} = Ticker.start_link([])
+Process.send_after(pid, :stop, 15_000)
+pid
+```
