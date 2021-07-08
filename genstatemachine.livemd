@@ -8,7 +8,15 @@ Mix.install([
 ])
 ```
 
-## Timeout
+## Event Timeout and State Timeout
+
+The following example will start a GenStateMachine that behaves like a ticking clock which:
+
+1. Transition to the `started` event inmendiatly the same way `handle_continue` will behave on GenServers
+2. Schedule 2 timeouts. One to send a `stop` event after 2 seconds if there is no state change (`state_timeout`) and a event timeout to `tick` after 1 second (`event_timeout`)
+3. The `tick` event will arrive first and cancel the stop `state_timeout` by start ticking and transition to `ticking` state
+4. Also it will add again a `state_timeout` after 10 seconds to `stop` while schedule a `tick` event every second that will increase the count and continue scheduling a `tick` event as a timeout
+5. Lastly since the state didin't change it will receive the `stop` event from the `state_timeout`
 
 ```elixir
 defmodule Ticker do
@@ -61,6 +69,10 @@ defmodule Ticker do
       increment(data),
       [{:timeout, 1_000, :tick}]
     }
+  end
+
+  def handle_event({:call, from}, :get_count, :ticking, data) do
+    {:keep_state_and_data, [{:reply, from, data.count}]}
   end
 
   def handle_event(:state_timeout, :stop, _state, _data) do
