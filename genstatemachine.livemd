@@ -85,7 +85,86 @@ defmodule Ticker do
   end
 end
 
-{:ok, pid} = Ticker.start_link([])
-Process.send_after(pid, :stop, 15_000)
-pid
+# {:ok, pid} = Ticker.start_link([])
+# Process.send_after(pid, :stop, 15_000)
+# pid
+```
+
+## Generic Timeout
+
+General Timeout is triggered independenly of events or state.
+The following example:
+
+1. Initialise the GenStateMachine and sets 2 timeouts: a GenericTimeout to kill the process after 15 seconds, an event timeout to tick every second
+2. The GenStateMachine starts ticking every second
+3. A call event is triggered to get the count which will interrupt the ticking
+4. After a while the process is kill with the initial timeout
+
+```elixir
+defmodule Ticker2 do
+  use GenStateMachine, restart: :temporary
+
+  require Logger
+
+  def start_link(_) do
+    GenStateMachine.start_link(__MODULE__, {:initial, %{count: 0}}, id: Ticker2)
+  end
+
+  def init({state, data}) do
+    Logger.info("Init")
+    {:ok, state, data, [{:next_event, :internal, :start}]}
+  end
+
+  def handle_event(:internal, :start, :initial, data) do
+    Logger.info("Start")
+
+    {
+      :next_state,
+      :started,
+      data,
+      [
+        {{:timeout, :kill}, 15_000, :stop},
+        {:timeout, 1_000, :tick}
+      ]
+    }
+  end
+
+  def handle_event(:timeout, :tick, :started, data) do
+    Logger.info("Tick #{data.count}")
+
+    {
+      :keep_state,
+      increment(data),
+      {:timeout, 1_000, :tick}
+    }
+  end
+
+  def handle_event(:info, :get_count, _state, data) do
+    Logger.info("The count is #{data.count}")
+    :keep_state_and_data
+  end
+
+  def handle_event(:cast, :increment, :started, data) do
+    {:keep_state, increment(data)}
+  end
+
+  def handle_event({:call, from}, :get_count, _state, data) do
+    {:keep_state_and_data, [{:reply, from, data.count}]}
+  end
+
+  def handle_event({:timeout, :kill}, :stop, _state, _data) do
+    Logger.info("Killing")
+    Process.exit(self(), :normal)
+  end
+
+  defp increment(data) do
+    update_in(data, [:count], &(&1 + 1))
+  end
+end
+
+{:ok, pid} = Ticker2.start_link([])
+
+# Process.send_after(pid, :get_count, 2_000)
+Process.sleep(5_000)
+GenStateMachine.call(pid, :get_count)
 ```
