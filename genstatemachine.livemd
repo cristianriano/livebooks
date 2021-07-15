@@ -123,7 +123,7 @@ defmodule Ticker2 do
       :started,
       data,
       [
-        {{:timeout, :kill}, 15_000, :stop},
+        {{:timeout, :kill}, 10_000, :stop},
         {:timeout, 1_000, :tick}
       ]
     }
@@ -152,9 +152,19 @@ defmodule Ticker2 do
     {:keep_state_and_data, [{:reply, from, data.count}]}
   end
 
+  def handle_event({:call, from}, :stop, _state, data) do
+    Logger.info("Stopping")
+    {:next_state, :stopping, data, [{:reply, from, :ok}, {:next_event, :internal, :stop}]}
+  end
+
   def handle_event({:timeout, :kill}, :stop, _state, _data) do
     Logger.info("Killing")
     Process.exit(self(), :normal)
+  end
+
+  def handle_event(:internal, :stop, :stopping, _data) do
+    Logger.info("Stop!")
+    {:stop, :normal}
   end
 
   defp increment(data) do
@@ -165,6 +175,7 @@ end
 {:ok, pid} = Ticker2.start_link([])
 
 # Process.send_after(pid, :get_count, 2_000)
-Process.sleep(5_000)
-GenStateMachine.call(pid, :get_count)
+Process.sleep(3_000)
+# GenStateMachine.call(pid, :get_count)
+GenStateMachine.call(pid, :stop)
 ```
